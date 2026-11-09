@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fan Calculator · 算番器 — Mahjong Mayhem</title>
+<meta name="description" content="Count the fan of a Chinese Official (Guobiao) mahjong hand: take a photo of your hand, tap in the tiles, pick the winning tile and the situation, and see every fan and the total.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="lang.js"></script>
+<style>
+  /* calculator: photo → hand → situation → result, one column on phones, two on wide screens */
+  .calc { max-width: 1040px; margin: 0 auto; padding: 8px 16px 64px; }
+  .calc h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 24px 0 4px; text-wrap: balance; }
+  .calc .lead { color: var(--muted); margin: 0 0 20px; max-width: 62ch; }
+  .grid { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 900px) { .grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+  .panel h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: baseline; gap: 8px; }
+  .panel h2 .step { font-size: .75rem; color: var(--gold); letter-spacing: .08em; text-transform: uppercase; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 0; }
+
+  /* photo */
+  .photo { display: grid; gap: 10px; }
+  .photo img { border-radius: 12px; border: 1px solid var(--line); max-height: 260px; width: auto; justify-self: center; }
+  .btn { appearance: none; border: 1px solid var(--line); background: var(--bg2); color: var(--ink); font: inherit; font-weight: 600;
+    padding: 9px 14px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #1d1325; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn:focus-visible, .tile:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  /* tiles: ivory face, green back edge, like the game */
+  .tile { appearance: none; border: 0; cursor: pointer; font: inherit; padding: 0; position: relative;
+    width: var(--tw, 40px); height: calc(var(--tw, 40px) * 1.36); border-radius: calc(var(--tw, 40px) * .16);
+    background: linear-gradient(#fffdf5, #efe5c8); box-shadow: inset 0 calc(var(--tw, 40px) * -.1) 0 #1a8a5a, 0 2px 4px rgba(0,0,0,.25);
+    display: grid; place-items: center; align-content: center; line-height: 1; color: #1a1a2e;
+    font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-weight: 700; }
+  .tile .a { font-size: calc(var(--tw, 40px) * .42); }
+  .tile .b { font-size: calc(var(--tw, 40px) * .40); margin-top: calc(var(--tw, 40px) * .02); }
+  .tile.m .b { color: #c8102e; }
+  .tile.p .a { color: #1d4ed8; } .tile.p .b { color: #1d4ed8; }
+  .tile.s .a { color: #15803d; } .tile.s .b { color: #15803d; }
+  .tile.h .a { font-size: calc(var(--tw, 40px) * .62); }
+  .tile.red .a { color: #c8102e; } .tile.green .a { color: #15803d; }
+  .tile.white .a { width: 52%; height: 50%; border: calc(var(--tw, 40px) * .06) solid #1d4ed8; border-radius: 3px; font-size: 0; }
+  .tile.win { box-shadow: inset 0 calc(var(--tw, 40px) * -.1) 0 #1a8a5a, 0 0 0 3px var(--gold), 0 0 14px var(--gold); }
+  .tile.full { opacity: .3; cursor: default; }
+
+  .palette { display: grid; gap: 6px; }
+  .palette .line { display: flex; flex-wrap: wrap; gap: 4px; --tw: 34px; }
+  @media (min-width: 520px) { .palette .line { --tw: 38px; } }
+
+  .hand { min-height: 64px; display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; --tw: 40px;
+    padding: 10px; border-radius: 12px; background: color-mix(in srgb, var(--felt) 85%, #000 15%); }
+  .hand .slot { position: relative; }
+  .hand .x { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--ink); color: var(--bg); font: 700 12px/20px system-ui, sans-serif; padding: 0; }
+  .hand .meld { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: rgba(255,255,255,.12); --tw: 32px; align-items: flex-end; }
+  .hand .meld .tag { font: 600 .7rem system-ui, sans-serif; color: #fff; writing-mode: vertical-rl; opacity: .8; }
+  .hand .empty { color: #e7f5ec; font-size: .9rem; align-self: center; }
+  .count { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .9rem; }
+
+  /* situation */
+  fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+  legend { font-weight: 600; font-size: .9rem; padding: 0; margin-bottom: 4px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--ink); font: inherit; padding: 6px 12px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .checks { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .checks label { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .checks input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .checks label.off { opacity: .45; }
+  .stepper { display: inline-flex; align-items: center; gap: 8px; }
+  .stepper output { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  /* result */
+  .result .total { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .result .big { font-size: 2.6rem; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1; }
+  .badge { font-size: .8rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+  .badge.ok { background: color-mix(in srgb, var(--felt) 20%, transparent); color: var(--felt); }
+  .badge.low { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .fans { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .fans li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .fans .pts { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--gold); white-space: nowrap; }
+  .fans .en { color: var(--muted); font-size: .85rem; }
+  .msg { padding: 10px 12px; border-radius: 10px; background: var(--bg2); color: var(--muted); }
+  .sticky { position: sticky; top: 72px; }
+  @media (prefers-reduced-motion: no-preference) { .tile { transition: transform .12s; } .tile:active { transform: translateY(2px); } }
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <a class="brand" href="./"><img src="assets/favicon.png" alt="" width="32" height="32"><span>麻将狂欢 Mahjong Mayhem</span></a>
+  <nav>
+    <a href="./"><span lang="en">Home</span><span lang="zh-Hans">首页</span></a>
+    <a href="calculator.html" aria-current="page"><span lang="en">Fan Calculator</span><span lang="zh-Hans">算番器</span></a>
+    <a href="support.html"><span lang="en">Support</span><span lang="zh-Hans">支持</span></a>
+    <a href="privacy.html"><span lang="en">Privacy</span><span lang="zh-Hans">隐私</span></a>
+    <span class="langs" role="group" aria-label="Language / 语言"><button type="button" data-l="en" aria-pressed="false">EN</button><button type="button" data-l="zh" aria-pressed="false">中文</button></span>
+  </nav>
+</div></header>
+
+<main class="calc">
+  <h1><span lang="en">Fan Calculator</span><span lang="zh-Hans">国标麻将算番器</span></h1>
+  <p class="lead">
+    <span lang="en">Take a photo of your winning hand, tap the tiles in, mark the winning tile and set the situation. Every fan and the total follow the Chinese Official (Guobiao) rules, with the same scoring as the Mahjong Mayhem app.</span>
+    <span lang="zh-Hans">拍下你的和牌，点选牌张，标出和牌张并选好场况，即可按国标麻将规则算出每一番和总番数，与《麻将狂欢》App 的算番完全一致。</span>
+  </p>
+
+  <div class="grid">
+    <div class="grid" style="grid-template-columns:minmax(0,1fr)">
+      <section class="panel" aria-labelledby="h-photo">
+        <h2 id="h-photo"><span class="step">1</span><span lang="en">Photo of your hand</span><span lang="zh-Hans">拍下你的牌</span></h2>
+        <div class="photo">
+          <div class="row">
+            <label class="btn primary" for="cam"><span lang="en">Take or choose a photo</span><span lang="zh-Hans">拍照或选择照片</span></label>
+            <input id="cam" type="file" accept="image/*" capture="environment" hidden>
+            <button class="btn" id="photoClear" type="button" hidden><span lang="en">Remove photo</span><span lang="zh-Hans">移除照片</span></button>
+          </div>
+          <img id="photo" alt="" hidden>
+          <p class="hint"><span lang="en">The photo stays on your device. It is only a reference while you tap in the tiles below.</span><span lang="zh-Hans">照片只留在你的设备上，不会上传，只用来对照点选下方的牌。</span></p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-hand">
+        <h2 id="h-hand"><span class="step">2</span><span lang="en">Your hand</span><span lang="zh-Hans">你的手牌</span></h2>
+        <p class="hint" id="handHint"></p>
+        <div class="hand" id="hand" aria-live="polite"></div>
+        <div class="row">
+          <span class="count" id="count"></span>
+          <button class="btn" id="clear" type="button"><span lang="en">Clear</span><span lang="zh-Hans">清空</span></button>
+        </div>
+        <div class="row" role="group" aria-label="Add">
+          <button class="btn" data-mode="hand" type="button" aria-pressed="true"><span lang="en">Hand tile</span><span lang="zh-Hans">手牌</span></button>
+          <button class="btn" data-mode="chi" type="button" aria-pressed="false"><span lang="en">+ Chow</span><span lang="zh-Hans">+ 吃</span></button>
+          <button class="btn" data-mode="pon" type="button" aria-pressed="false"><span lang="en">+ Pung</span><span lang="zh-Hans">+ 碰</span></button>
+          <button class="btn" data-mode="kan" type="button" aria-pressed="false"><span lang="en">+ Kong</span><span lang="zh-Hans">+ 明杠</span></button>
+          <button class="btn" data-mode="ankan" type="button" aria-pressed="false"><span lang="en">+ Concealed kong</span><span lang="zh-Hans">+ 暗杠</span></button>
+        </div>
+        <div class="palette" id="palette"></div>
+      </section>
+    </div>
+
+    <div class="grid sticky" style="grid-template-columns:minmax(0,1fr)">
+      <section class="panel" aria-labelledby="h-sit">
+        <h2 id="h-sit"><span class="step">3</span><span lang="en">Situation</span><span lang="zh-Hans">场况</span></h2>
+        <fieldset><legend><span lang="en">Prevailing wind</span><span lang="zh-Hans">圈风</span></legend><div class="seg" id="round"></div></fieldset>
+        <fieldset><legend><span lang="en">Seat wind</span><span lang="zh-Hans">门风</span></legend><div class="seg" id="seat"></div></fieldset>
+        <fieldset>
+          <legend><span lang="en">How you won</span><span lang="zh-Hans">和牌方式</span></legend>
+          <div class="checks" id="checks"></div>
+        </fieldset>
+        <fieldset>
+          <legend><span lang="en">Flowers</span><span lang="zh-Hans">花牌</span></legend>
+          <div class="stepper"><button class="btn" id="fMinus" type="button" aria-label="−">−</button><output id="flowers">0</output><button class="btn" id="fPlus" type="button" aria-label="+">+</button>
+            <span class="hint"><span lang="en">1 point each, added after the fan total</span><span lang="zh-Hans">每张 1 分，另加在番数之外</span></span></div>
+        </fieldset>
+      </section>
+
+      <section class="panel result" aria-labelledby="h-res" aria-live="polite">
+        <h2 id="h-res"><span class="step">4</span><span lang="en">Result</span><span lang="zh-Hans">算番结果</span></h2>
+        <div id="result"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer><div class="in">
+  <span>© 2026 Yin See Tan</span>
+  <nav><a href="./"><span lang="en">Home</span><span lang="zh-Hans">首页</span></a><a href="support.html"><span lang="en">Support</span><span lang="zh-Hans">支持</span></a><a href="privacy.html"><span lang="en">Privacy</span><span lang="zh-Hans">隐私</span></a><a href="mailto:yinsee@gmail.com">yinsee@gmail.com</a></nav>
+</div></footer>
+
+<script type="module">
+import { evaluate, FAN } from './calc/scoring.js';
+
+const $ = id => document.getElementById(id);
+const zh = () => document.documentElement.classList.contains('lang-zh');
+const L = (z, e) => (zh() ? z : e);
+
+// ---------- tiles ----------
+const NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
+const HON = ['東', '南', '西', '北', '中', '發', ''];
+const WIND_ZH = ['东', '南', '西', '北'], WIND_EN = ['East', 'South', 'West', 'North'];
+const suit = t => (t < 27 ? Math.floor(t / 9) : 3);
+function tileEl(t, extra = '') {
+  const b = document.createElement('button');
+  b.type = 'button';
+  const s = suit(t);
+  if (s === 0) { b.className = 'tile m'; b.innerHTML = `<span class="a">${NUM[t % 9]}</span><span class="b">萬</span>`; }
+  else if (s === 1) { b.className = 'tile p'; b.innerHTML = `<span class="a">${t % 9 + 1}</span><span class="b">筒</span>`; }
+  else if (s === 2) { b.className = 'tile s'; b.innerHTML = `<span class="a">${t % 9 + 1}</span><span class="b">條</span>`; }
+  else {
+    b.className = 'tile h' + (t === 31 ? ' red' : t === 32 ? ' green' : t === 33 ? ' white' : '');
+    b.innerHTML = `<span class="a">${HON[t - 27] || '白'}</span>`;
+  }
+  if (extra) b.className += ' ' + extra;
+  b.setAttribute('aria-label', tileName(t));
+  return b;
+}
+function tileName(t) {
+  if (t < 27) return zh() ? NUM[t % 9] + ['万', '筒', '条'][suit(t)] : `${t % 9 + 1} ${['Character', 'Dot', 'Bamboo'][suit(t)]}`;
+  return zh() ? ['东', '南', '西', '北', '中', '发', '白'][t - 27] : ['East', 'South', 'West', 'North', 'Red', 'Green', 'White'][t - 27];
+}
+
+// ---------- state ----------
+// hand: concealed tile types in the order tapped; melds: [{kind, t}] (chi t = lowest tile); win: index into hand
+const S = { hand: [], melds: [], win: null, mode: 'hand', round: 0, seat: 0, flowers: 0,
+  opt: { selfDraw: false, lastWall: false, kongDraw: false, robKong: false, lastTile: false } };
+const meldTiles = m => (m.kind === 'chi' ? [m.t, m.t + 1, m.t + 2] : m.kind === 'pon' ? [m.t, m.t, m.t] : [m.t, m.t, m.t, m.t]);
+const used = t => S.hand.filter(x => x === t).length + S.melds.flatMap(meldTiles).filter(x => x === t).length;
+const need = () => 14 - 3 * S.melds.length;
+
+function canAdd(t) {
+  if (S.mode === 'hand') return S.hand.length < need() && used(t) < 4;
+  if (S.melds.length >= 4 || S.hand.length > need() - 3) return false;
+  if (S.mode === 'chi') return t < 27 && t % 9 <= 6 && [t, t + 1, t + 2].every(x => used(x) < 4);
+  if (S.mode === 'pon') return used(t) <= 1;
+  return used(t) === 0;   // kong: all four
+}
+function add(t) {
+  if (!canAdd(t)) return;
+  if (S.mode === 'hand') S.hand.push(t);
+  else { S.melds.push({ kind: S.mode, t }); setMode('hand'); }
+  render();
+}
+
+// ---------- render ----------
+function renderPalette() {
+  const p = $('palette');
+  p.textContent = '';
+  for (const range of [[0, 9], [9, 18], [18, 27], [27, 34]]) {
+    const line = document.createElement('div');
+    line.className = 'line';
+    for (let t = range[0]; t < range[1]; t++) {
+      const b = tileEl(t, canAdd(t) ? '' : 'full');
+      b.addEventListener('click', () => add(t));
+      line.append(b);
+    }
+    p.append(line);
+  }
+}
+
+function renderHand() {
+  const h = $('hand');
+  h.textContent = '';
+  const order = S.hand.map((t, i) => ({ t, i })).sort((a, b) => a.t - b.t || a.i - b.i);
+  for (const { t, i } of order) {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    const b = tileEl(t, S.win === i ? 'win' : '');
+    b.title = L('点按标为和牌张', 'Tap to mark as the winning tile');
+    b.addEventListener('click', () => { S.win = S.win === i ? null : i; render(); });
+    const x = document.createElement('button');
+    x.className = 'x'; x.type = 'button'; x.textContent = '×';
+    x.setAttribute('aria-label', L('移除', 'Remove') + ' ' + tileName(t));
+    x.addEventListener('click', () => {
+      S.hand.splice(i, 1);
+      if (S.win === i) S.win = null; else if (S.win !== null && S.win > i) S.win--;
+      render();
+    });
+    slot.append(b, x);
+    h.append(slot);
+  }
+  S.melds.forEach((m, k) => {
+    const g = document.createElement('div');
+    g.className = 'meld slot';
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = { chi: L('吃', 'Chow'), pon: L('碰', 'Pung'), kan: L('明杠', 'Kong'), ankan: L('暗杠', 'Conc. kong') }[m.kind];
+    g.append(tag);
+    for (const t of meldTiles(m)) { const b = tileEl(t); b.tabIndex = -1; g.append(b); }
+    const x = document.createElement('button');
+    x.className = 'x'; x.type = 'button'; x.textContent = '×';
+    x.setAttribute('aria-label', L('移除这组', 'Remove this set'));
+    x.addEventListener('click', () => { S.melds.splice(k, 1); render(); });
+    g.append(x);
+    h.append(g);
+  });
+  if (!S.hand.length && !S.melds.length) {
+    const e = document.createElement('span');
+    e.className = 'empty';
+    e.textContent = L('从下方点选牌张。吃、碰、杠的牌用上方按钮加入。', 'Tap tiles below. Add chows, pungs and kongs you exposed with the buttons above.');
+    h.append(e);
+  }
+  $('count').textContent = L(`手牌 ${S.hand.length} / ${need()} 张`, `${S.hand.length} of ${need()} hand tiles`);
+  $('handHint').textContent = S.hand.length === need() && S.win === null
+    ? L('点一下你最后和的那张牌（和牌张），它会亮起金框。', 'Tap the tile you won on (the last tile). It gets a gold frame.')
+    : L('手牌包括和牌张。点按手牌可标为和牌张，× 移除。', 'Your hand includes the winning tile. Tap a hand tile to mark it as the winning tile; × removes it.');
+}
+
+function seg(el, val, set) {
+  el.textContent = '';
+  for (let w = 0; w < 4; w++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = zh() ? WIND_ZH[w] : WIND_EN[w];
+    b.setAttribute('aria-pressed', String(val === w));
+    b.addEventListener('click', () => { set(w); render(); });
+    el.append(b);
+  }
+}
+
+const CHECKS = [
+  ['selfDraw', '自摸', 'Self-drawn'],
+  ['lastWall', '最后一张牌（妙手回春 / 海底捞月）', 'Last tile of the wall'],
+  ['kongDraw', '杠上开花（杠后补牌自摸）', 'Win on a kong replacement'],
+  ['robKong', '抢杠和', 'Robbing the kong'],
+  ['lastTile', '和绝张（和牌张是最后一张）', 'Last of its kind'],
+];
+function renderChecks() {
+  const box = $('checks');
+  box.textContent = '';
+  // kong replacement needs self-drawn; robbing a kong is never self-drawn
+  const disabled = { kongDraw: !S.opt.selfDraw, robKong: S.opt.selfDraw };
+  for (const [k, z, e] of CHECKS) {
+    if (disabled[k]) S.opt[k] = false;
+    const l = document.createElement('label');
+    if (disabled[k]) l.className = 'off';
+    const i = document.createElement('input');
+    i.type = 'checkbox'; i.id = 'opt-' + k; i.checked = S.opt[k]; i.disabled = !!disabled[k];
+    i.addEventListener('change', () => { S.opt[k] = i.checked; render(); });
+    l.append(i, document.createTextNode(L(z, e)));
+    box.append(l);
+  }
+}
+
+function renderResult() {
+  const r = $('result');
+  r.textContent = '';
+  const msg = s => { const p = document.createElement('p'); p.className = 'msg'; p.textContent = s; r.append(p); };
+  const n = need();
+  if (S.hand.length < n) return msg(L(`还差 ${n - S.hand.length} 张手牌。`, `Add ${n - S.hand.length} more hand tile${n - S.hand.length > 1 ? 's' : ''}.`));
+  if (S.win === null) return msg(L('请点一下和牌张（最后一张）。', 'Tap the tile you won on (the last tile).'));
+  const res = evaluate({
+    concealed: S.hand.slice(), melds: S.melds.map(m => ({ kind: m.kind, t: m.t })), winTile: S.hand[S.win],
+    seatWind: S.seat, roundWind: S.round, flowers: S.flowers, ...S.opt,
+  });
+  if (!res) return msg(L('这不是和牌牌型。请检查手牌和吃碰杠。', 'This is not a winning hand. Check the tiles and the sets.'));
+  const top = document.createElement('div');
+  top.className = 'total';
+  top.innerHTML = `<span class="big">${res.total}</span><span>${L('番', 'fan')}</span>`;
+  const badge = document.createElement('span');
+  badge.className = 'badge ' + (res.valid ? 'ok' : 'low');
+  badge.textContent = res.valid ? L('够 8 番起和', 'Meets the 8-fan minimum') : L('不足 8 番，不能和', 'Below the 8-fan minimum');
+  top.append(badge);
+  r.append(top);
+  if (res.flowers) {
+    const f = document.createElement('p');
+    f.className = 'hint';
+    f.textContent = L(`加花牌 ${res.flowers} 分，共 ${res.grand} 分`, `Plus ${res.flowers} for flowers: ${res.grand} in total`);
+    r.append(f);
+  }
+  const ul = document.createElement('ul');
+  ul.className = 'fans';
+  for (const f of res.fans) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.textContent = FAN[f.k].zh + (f.n > 1 ? ` ×${f.n}` : '');
+    const en = document.createElement('span');
+    en.className = 'en';
+    en.textContent = FAN[f.k].en;
+    const pts = document.createElement('span');
+    pts.className = 'pts';
+    pts.textContent = `${f.p * f.n} ${L('番', 'fan')}`;
+    li.append(name, en, pts);
+    ul.append(li);
+  }
+  r.append(ul);
+}
+
+function setMode(m) {
+  S.mode = m;
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+}
+
+function render() {
+  renderPalette();
+  renderHand();
+  seg($('round'), S.round, w => { S.round = w; });
+  seg($('seat'), S.seat, w => { S.seat = w; });
+  renderChecks();
+  $('flowers').textContent = S.flowers;
+  renderResult();
+}
+
+// ---------- controls ----------
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { setMode(b.dataset.mode); render(); }));
+$('clear').addEventListener('click', () => { S.hand = []; S.melds = []; S.win = null; setMode('hand'); render(); });
+$('fMinus').addEventListener('click', () => { S.flowers = Math.max(0, S.flowers - 1); render(); });
+$('fPlus').addEventListener('click', () => { S.flowers = Math.min(8, S.flowers + 1); render(); });
+
+let photoURL = null;
+$('cam').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  if (photoURL) URL.revokeObjectURL(photoURL);
+  photoURL = URL.createObjectURL(f);       // shown locally only, never uploaded
+  $('photo').src = photoURL;
+  $('photo').alt = L('你的手牌照片', 'Photo of your hand');
+  $('photo').hidden = false;
+  $('photoClear').hidden = false;
+});
+$('photoClear').addEventListener('click', () => {
+  if (photoURL) URL.revokeObjectURL(photoURL);
+  photoURL = null;
+  $('photo').hidden = true; $('photo').removeAttribute('src');
+  $('photoClear').hidden = true;
+  $('cam').value = '';
+});
+
+// re-render when the language changes (lang.js switches the class on <html>)
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+// a sample hand so the page shows what it does: 十三幺, won on 中, self-drawn
+S.hand = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 31];
+S.win = 13;
+S.opt.selfDraw = true;
+render();
+</script>
+</body>
+</html>
