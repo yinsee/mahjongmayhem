@@ -120,8 +120,10 @@
           <div class="row">
             <label class="btn primary" for="cam"><span lang="en">Take or choose a photo</span><span lang="zh-Hans">拍照或选择照片</span></label>
             <input id="cam" type="file" accept="image/*" capture="environment" hidden>
+            <button class="btn" id="readTiles" type="button" hidden><span lang="en">Read the tiles</span><span lang="zh-Hans">自动识别牌张</span></button>
             <button class="btn" id="photoClear" type="button" hidden><span lang="en">Remove photo</span><span lang="zh-Hans">移除照片</span></button>
           </div>
+          <p class="hint" id="readStatus" role="status" hidden></p>
           <img id="photo" alt="" hidden>
           <p class="hint"><span lang="en">The photo stays on your device. It is only a reference while you tap in the tiles below.</span><span lang="zh-Hans">照片只留在你的设备上，不会上传，只用来对照点选下方的牌。</span></p>
         </div>
@@ -177,6 +179,7 @@
 
 <script type="module">
 import { evaluate, FAN } from './calc/scoring.js';
+import { modelAvailable, detectTiles } from './calc/detect.js';
 
 const $ = id => document.getElementById(id);
 const zh = () => document.documentElement.classList.contains('lang-zh');
@@ -404,13 +407,48 @@ $('cam').addEventListener('change', e => {
   $('photo').alt = L('你的手牌照片', 'Photo of your hand');
   $('photo').hidden = false;
   $('photoClear').hidden = false;
+  $('readTiles').hidden = !hasModel;
+  $('readStatus').hidden = true;
 });
 $('photoClear').addEventListener('click', () => {
   if (photoURL) URL.revokeObjectURL(photoURL);
   photoURL = null;
   $('photo').hidden = true; $('photo').removeAttribute('src');
   $('photoClear').hidden = true;
+  $('readTiles').hidden = true;
+  $('readStatus').hidden = true;
   $('cam').value = '';
+});
+
+// automatic tile reading: only when a trained model is published (calc/model/); it runs on the device
+let hasModel = false;
+modelAvailable().then(ok => { hasModel = ok; if (ok && photoURL) $('readTiles').hidden = false; });
+$('readTiles').addEventListener('click', async () => {
+  const st = $('readStatus'), btn = $('readTiles');
+  btn.disabled = true;
+  st.hidden = false;
+  st.textContent = L('正在识别…（第一次需要下载模型）', 'Reading the tiles… (the first time downloads the model)');
+  try {
+    if (!$('photo').complete) await $('photo').decode();
+    const found = await detectTiles($('photo'));
+    const tiles = found.filter(d => d.t < 34).map(d => d.t);
+    const flowers = found.filter(d => d.t >= 34).length;
+    S.melds = [];
+    S.hand = tiles.slice(0, 14);
+    S.win = null;
+    S.flowers = Math.min(8, flowers);
+    setMode('hand');
+    render();
+    st.textContent = tiles.length
+      ? L(`找到 ${tiles.length} 张牌${flowers ? `、${flowers} 张花` : ''}。请核对，错的用 × 删除再补上，把吃碰杠的牌改用上方按钮加入，然后点一下和牌张。`,
+          `Found ${tiles.length} tiles${flowers ? ` and ${flowers} flowers` : ''}. Check them: remove a wrong tile with × and tap the right one, move exposed sets to the chow / pung / kong buttons, then tap the winning tile.`)
+      : L('没有找到牌。请拍得近一点、亮一点，牌面朝上。', 'No tiles found. Take the photo closer, in better light, with the tile faces up.');
+  } catch (e) {
+    st.textContent = L('识别失败，请手动点选牌张。', 'The tiles could not be read. Tap them in by hand.');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // re-render when the language changes (lang.js switches the class on <html>)
