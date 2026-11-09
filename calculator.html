@@ -37,17 +37,9 @@
   .tile { appearance: none; border: 0; cursor: pointer; font: inherit; padding: 0; position: relative;
     width: var(--tw, 40px); height: calc(var(--tw, 40px) * 1.36); border-radius: calc(var(--tw, 40px) * .16);
     background: linear-gradient(#fffdf5, #efe5c8); box-shadow: inset 0 calc(var(--tw, 40px) * -.1) 0 #1a8a5a, 0 2px 4px rgba(0,0,0,.25);
-    display: grid; place-items: center; align-content: center; line-height: 1; color: #1a1a2e;
-    font-family: "Songti SC", "STSong", "Noto Serif SC", serif; font-weight: 700; }
-  .tile .a { font-size: calc(var(--tw, 40px) * .42); }
-  .tile .b { font-size: calc(var(--tw, 40px) * .40); margin-top: calc(var(--tw, 40px) * .02); }
-  .tile.m .b { color: #c8102e; }
-  .tile.p .a { color: #1d4ed8; } .tile.p .b { color: #1d4ed8; }
-  .tile.s .a { color: #15803d; } .tile.s .b { color: #15803d; }
-  .tile.h .a { font-size: calc(var(--tw, 40px) * .62); }
-  .tile.red .a { color: #c8102e; } .tile.green .a { color: #15803d; }
+    display: grid; place-items: center; line-height: 1; }
   [hidden] { display: none !important; }
-  .tile.white .a { display: block; width: calc(var(--tw, 40px) * .5); height: calc(var(--tw, 40px) * .72); border: calc(var(--tw, 40px) * .06) solid #1d4ed8; border-radius: 3px; font-size: 0; }
+  .tile svg { width: 92%; height: 84%; display: block; margin-top: -6%; }
   .tile.win { box-shadow: inset 0 calc(var(--tw, 40px) * -.1) 0 #1a8a5a, 0 0 0 3px var(--gold), 0 0 14px var(--gold); }
   .tile.full { opacity: .3; cursor: default; }
 
@@ -180,6 +172,7 @@
 <script type="module">
 import { evaluate, FAN } from './calc/scoring.js';
 import { modelAvailable, detectTiles } from './calc/detect.js';
+import { faceSVG } from './calc/tileart.js';
 
 const $ = id => document.getElementById(id);
 const zh = () => document.documentElement.classList.contains('lang-zh');
@@ -187,21 +180,13 @@ const L = (z, e) => (zh() ? z : e);
 
 // ---------- tiles ----------
 const NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
-const HON = ['東', '南', '西', '北', '中', '發', ''];
 const WIND_ZH = ['东', '南', '西', '北'], WIND_EN = ['East', 'South', 'West', 'North'];
 const suit = t => (t < 27 ? Math.floor(t / 9) : 3);
 function tileEl(t, extra = '') {
   const b = document.createElement('button');
   b.type = 'button';
-  const s = suit(t);
-  if (s === 0) { b.className = 'tile m'; b.innerHTML = `<span class="a">${NUM[t % 9]}</span><span class="b">萬</span>`; }
-  else if (s === 1) { b.className = 'tile p'; b.innerHTML = `<span class="a">${t % 9 + 1}</span><span class="b">筒</span>`; }
-  else if (s === 2) { b.className = 'tile s'; b.innerHTML = `<span class="a">${t % 9 + 1}</span><span class="b">條</span>`; }
-  else {
-    b.className = 'tile h' + (t === 31 ? ' red' : t === 32 ? ' green' : t === 33 ? ' white' : '');
-    b.innerHTML = `<span class="a">${HON[t - 27] || '白'}</span>`;
-  }
-  if (extra) b.className += ' ' + extra;
+  b.className = 'tile' + (extra ? ' ' + extra : '');
+  b.innerHTML = faceSVG(t);          // the game's tile art, drawn as SVG
   b.setAttribute('aria-label', tileName(t));
   return b;
 }
